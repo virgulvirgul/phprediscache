@@ -103,12 +103,14 @@ class PhpRedisCache extends Module
     public function getContent()
     {
         $message = '';
+        if (class_exists('Redis') && class_exists('CachePhpRedis')) {
+            $redis = new Redis();
+            $servers = CachePhpRedis::getRedisServer();
+        }
+
         if (Tools::isSubmit('flushdb') && Tools::getValue('flushdb') == '1') {
             $flushed = false;
             if (class_exists('Redis') && class_exists('CachePhpRedis')) {
-                $redis = new Redis();
-                $servers = CachePhpRedis::getRedisServer();
-
                 if ($redis->pconnect($servers['PREDIS_SERVER'], $servers['PREDIS_PORT'])) {
                     $redis->setOption(Redis::OPT_SERIALIZER, Redis::SERIALIZER_PHP);
                     if ($servers['PREDIS_AUTH'] != '' && ($redis->auth((string)$servers['PREDIS_AUTH']))) {
@@ -133,8 +135,10 @@ class PhpRedisCache extends Module
         $default_lang = (int)Configuration::get('PS_LANG_DEFAULT');
 
 
-
-        if (class_exists('Redis') && class_exists('CachePhpRedis')) {
+        $settings = Tools::file_get_contents(_PS_ROOT_DIR_.'/config/settings.inc.php');
+        if (strpos($settings, 'define(\'_PS_CACHE_ENABLED_\', \'1\');') !== false &&
+            strpos($settings, 'define(\'_PS_CACHING_SYSTEM_\', \'CachePhpRedis\');') !== false &&
+            class_exists('Redis') && class_exists('CachePhpRedis')) {
             $this->redis = new Redis();
 
             $servers = CachePhpRedis::getRedisServer();
