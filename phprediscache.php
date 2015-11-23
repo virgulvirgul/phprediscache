@@ -17,27 +17,29 @@
  * @license   http://opensource.org/licenses/osl-3.0.php Open Software License (OSL 3.0)
  */
 
-if (!defined('_PS_VERSION_')) {
-    exit;
-}
-
 class PhpRedisCache extends Module
 {
     public function __construct()
     {
         $this->name = 'phprediscache';
-        $this->tab = 'front_office_features';
-        $this->version = '1.2.0';
+        $this->tab = 'administration';
+        $this->version = '1.3.0';
         $this->author = 'Michael Dekker & Hachem LATRACH';
 
         parent::__construct();
 
-        $this->displayName = $this->l('Redis Cache (phpredis library)');
+        $this->displayName = $this->l('Redis Cache (PHP Redis extension)');
         $this->description = $this->l('Use Redis as cache server to give best performance to your shop');
 
         $this->confirmUninstall = $this->l('Are you sure you want to uninstall this module?');
 
         $this->_checkContent();
+
+        // You'll only benefit from this module if ps version is 1.6.1.0 or higher
+        $this->ps_versions_compliancy = array(
+            'min' => '1.6.1.0',
+            'max' => _PS_VERSION_
+        );
 
         $this->bootstrap = true;
         $this->context->smarty->assign('module_name', $this->name);
@@ -58,11 +60,12 @@ class PhpRedisCache extends Module
             Tools::clearSmartyCache();
             Tools::clearXMLCache();
             Media::clearCache();
-            Tools::generateIndex();
+            PrestaShopAutoload::getInstance()->generateIndex();
         }
 
         Configuration::updateValue('PREDIS_SERVER', '127.0.0.1');
         Configuration::updateValue('PREDIS_PORT', '6379');
+        Configuration::updateValue('PREDIS_DB', '0');
 
         return true;
     }
@@ -100,13 +103,59 @@ class PhpRedisCache extends Module
     public function getContent()
     {
         $message = '';
+        if (Tools::isSubmit('flushdb') && Tools::getValue('flushdb') == '1') {
+            $flushed = false;
+            if (class_exists('Redis') && class_exists('CachePhpRedis')) {
+                $redis = new Redis();
+                $servers = CachePhpRedis::getRedisServer();
+
+                if ($redis->pconnect($servers['PREDIS_SERVER'], $servers['PREDIS_PORT'])) {
+                    $redis->setOption(Redis::OPT_SERIALIZER, Redis::SERIALIZER_PHP);
+                    if ($servers['PREDIS_AUTH'] != '' && ($redis->auth((string)$servers['PREDIS_AUTH']))) {
+                        $flushed = $redis->flushDB();
+                    } else {
+                        $flushed = $redis->flushDB();
+                    }
+                }
+            }
+            if ($flushed) {
+                $message .= $this->displayConfirmation('Databased flushed sucessfully');
+            } else {
+                $message .= $this->displayError('Unable to flush database');
+            }
+        }
+
         if (Tools::isSubmit('submit'.$this->name)) {
-            $message = $this->_saveContent();
+            $message .= $this->_saveContent();
         }
 
         // Get default language
         $default_lang = (int)Configuration::get('PS_LANG_DEFAULT');
 
+
+
+        if (class_exists('Redis') && class_exists('CachePhpRedis')) {
+            $this->redis = new Redis();
+
+            $servers = CachePhpRedis::getRedisServer();
+
+            if ($this->redis->pconnect($servers['PREDIS_SERVER'], $servers['PREDIS_PORT'])) {
+                $this->redis->setOption(Redis::OPT_SERIALIZER, Redis::SERIALIZER_PHP);
+                if ($servers['PREDIS_AUTH'] != '') {
+                    if (!($this->redis->auth((string)$servers['PREDIS_AUTH']))) {
+                        $connection_status = $this->l('PrestaShop is NOT connected to Redis');
+                    } else {
+                        $connection_status = $this->l('PrestaShop is connected to Redis');
+                    }
+                } else {
+                    $connection_status = $this->l('PrestaShop is connected to Redis');
+                }
+            } else {
+                $connection_status = $this->l('PrestaShop is NOT connected to Redis');
+            }
+        } else {
+            $connection_status = $this->l('PrestaShop is NOT connected to Redis');
+        }
         // Init Fields form array
         $fields_form = array();
         $fields_form[0]['form'] = array(
@@ -114,6 +163,7 @@ class PhpRedisCache extends Module
                 'title' => Translate::getAdminTranslation('Settings', 'AdminReferrers'),
                 'icon' => 'icon-cogs'
             ),
+            'description' => $connection_status,
             'input' => array(
                 array(
                     'type' => 'text',
@@ -138,6 +188,46 @@ class PhpRedisCache extends Module
                     'size' => 200,
                     'required' => false,
                     'desc' => $this->l('If applicable, enter the auth key.')
+                ),
+                array(
+                    'type' => 'text',
+                    'label' => $this->l('Database'),
+                    'name' => 'PREDIS_DB',
+                    'size' => 200,
+                    'required' => false,
+                    'desc' => $this->l('Enter the database number.')
+                )
+            ),
+            'submit' => array(
+                'title' => Translate::getAdminTranslation('Save', 'AdminReferrers'),
+                'class' => 'btn btn-default pull-right'
+            )
+        );
+
+        $fields_form[1]['form'] = array(
+            'legend' => array(
+                'title' => $this->l('Database'),
+                'icon' => 'icon-database'
+            ),
+            'input' => array(
+                array(
+                    'type' => (version_compare(_PS_VERSION_, '1.6', '>=')) ? 'switch' : 'radio',
+                    'class' => (version_compare(_PS_VERSION_, '1.6', '>=')) ? null : 't',
+                    'is_bool' => true,
+                    'label' => $this->l('I would like to flush the current database: ').$servers['PREDIS_DB'],
+                    'name' => 'flushdb',
+                    'values' => array(
+                        array(
+                            'id' => 'flushdb_on',
+                            'value' => 1,
+                            'label' => $this->l('Enabled')
+                        ),
+                        array(
+                            'id' => 'flushdb_off',
+                            'value' => 0,
+                            'label' => $this->l('Disabled')
+                        )
+                    )
                 )
             ),
             'submit' => array(
@@ -179,39 +269,41 @@ class PhpRedisCache extends Module
         $helper->fields_value['PREDIS_SERVER'] = Configuration::get('PREDIS_SERVER');
         $helper->fields_value['PREDIS_PORT'] = Configuration::get('PREDIS_PORT');
         $helper->fields_value['PREDIS_AUTH'] = Configuration::get('PREDIS_AUTH');
+        $helper->fields_value['PREDIS_DB'] = Configuration::get('PREDIS_DB');
 
         return $message.$helper->generateForm($fields_form);
     }
 
-    private function _copyClass()
+    protected function _copyClass()
     {
-        @unlink(_PS_ROOT_DIR_.'/override/classes/cache/CachePhpRedis.php');
         return copy(
-            _PS_MODULE_DIR_.'phprediscache/manualoverride/classes/cache/CachePhpRedis.php',
+            dirname(__FILE__).'/manualoverride/classes/cache/CachePhpRedis.php',
             _PS_ROOT_DIR_.'/override/classes/cache/CachePhpRedis.php'
         );
     }
 
-    private function _removeClass()
+    protected function _removeClass()
     {
         return unlink(_PS_ROOT_DIR_.'/override/classes/cache/CachePhpRedis.php');
     }
 
-    private function _saveContent()
+    protected function _saveContent()
     {
         $message = '';
 
         if ((Validate::isIp2Long(Tools::getValue('PREDIS_SERVER')) ||
                 $this->isValidDomain(Tools::getValue('PREDIS_SERVER'))) &&
             Validate::isInt(Tools::getValue('PREDIS_PORT')) &&
+            Validate::isInt(Tools::getValue('PREDIS_DB')) &&
             Configuration::updateValue('PREDIS_SERVER', Tools::getValue('PREDIS_SERVER')) &&
             Configuration::updateValue('PREDIS_PORT', Tools::getValue('PREDIS_PORT')) &&
-            Configuration::updateValue('PREDIS_AUTH', Tools::getValue('PREDIS_AUTH'))
+            Configuration::updateValue('PREDIS_AUTH', Tools::getValue('PREDIS_AUTH')) &&
+            Configuration::updateValue('PREDIS_DB', Tools::getValue('PREDIS_DB'))
         ) {
             if (get_class(Cache::getInstance()) == 'CachePhpRedis') {
                 // Already connected so we need to reconnect here
                 $redis = Cache::getInstance();
-                $redis->__destruct(); // Arghhh
+                $redis->__destruct();
                 $redis = Cache::getInstance();
                 $redis->connect();
             }
@@ -223,21 +315,22 @@ class PhpRedisCache extends Module
         return $message;
     }
 
-    private function _checkContent()
+    protected function _checkContent()
     {
         if (!Configuration::get('PREDIS_SERVER') &&
             !Configuration::get('PREDIS_PORT') &&
-            !Configuration::get('PREDIS_AUTH')
+            !Configuration::get('PREDIS_DB')
         ) {
             $this->warning = $this->l('You need to configure this module.');
         }
     }
 
-    private function _createContent()
+    protected function _createContent()
     {
         if (!Configuration::updateValue('PREDIS_SERVER', '') ||
             !Configuration::updateValue('PREDIS_PORT', '') ||
-            !Configuration::updateValue('PREDIS_AUTH')
+            !Configuration::updateValue('PREDIS_AUTH', '') ||
+            !Configuration::updateValue('PREDIS_DB', '0')
         ) {
             return false;
         }
@@ -245,11 +338,12 @@ class PhpRedisCache extends Module
         return true;
     }
 
-    private function _deleteContent()
+    protected function _deleteContent()
     {
         if (!Configuration::deleteByName('PREDIS_SERVER') ||
             !Configuration::deleteByName('PREDIS_PORT') ||
-            !Configuration::deleteByName('PREDIS_AUTH')
+            !Configuration::deleteByName('PREDIS_AUTH') ||
+            !Configuration::deleteByName('PREDIS_DB')
         ) {
             return false;
         }
@@ -257,7 +351,7 @@ class PhpRedisCache extends Module
         return true;
     }
 
-    private function isValidDomain($domain_name)
+    protected function isValidDomain($domain_name)
     {
         return (preg_match("/^([a-z\d](-*[a-z\d])*)(\.([a-z\d](-*[a-z\d])*))*$/i", $domain_name) //valid chars check
             && preg_match("/^.{1,253}$/", $domain_name) //overall length check

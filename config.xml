@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <module>
 	<name>prediscache</name>
-	<displayName><![CDATA[Redis Cache (predis library)]]></displayName>
-	<version><![CDATA[1.0]]></version>
+	<displayName><![CDATA[Redis Cache (PHP Redis extension))]]></displayName>
+	<version><![CDATA[1.2.1]]></version>
 	<description><![CDATA[Use Redis as cache server to give best performance to your shop]]></description>
 	<author><![CDATA[Michael Dekker & Hachem LATRACH]]></author>
-	<tab><![CDATA[front_office_features]]></tab>
+	<tab><![CDATA[administration]]></tab>
 	<is_configurable>1</is_configurable>
 	<need_instance>1</need_instance>
 	<limited_countries></limited_countries>

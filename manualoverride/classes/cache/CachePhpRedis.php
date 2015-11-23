@@ -36,11 +36,10 @@ class CachePhpRedis extends Cache
     /**
      * @var bool Connection status
      */
-    protected $is_connected = false;
+    public $is_connected = false;
 
     public function __construct()
     {
-
         $this->connect();
 
         if ($this->is_connected) {
@@ -75,8 +74,8 @@ class CachePhpRedis extends Cache
                     if (!($this->redis->auth((string)$servers['PREDIS_AUTH']))) {
                         return;
                     }
-
                 }
+                $this->redis->select((int)$servers['PREDIS_DB']);
                 $this->is_connected = true;
             }
         }
@@ -179,7 +178,7 @@ class CachePhpRedis extends Cache
         $server = array();
         // bypass the memory fatal error caused functions nesting on PS 1.5
         $params = Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS(
-            'SELECT * FROM '._DB_PREFIX_.'configuration WHERE name = "PREDIS_SERVER" OR name="PREDIS_PORT" OR name="PREDIS_AUTH"',
+            'SELECT * FROM '._DB_PREFIX_.'configuration WHERE name = "PREDIS_SERVER" OR name="PREDIS_PORT" OR name="PREDIS_AUTH" OR name="PREDIS_DB"',
             true,
             false
         );
