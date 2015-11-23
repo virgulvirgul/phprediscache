@@ -23,7 +23,7 @@ class PhpRedisCache extends Module
     {
         $this->name = 'phprediscache';
         $this->tab = 'administration';
-        $this->version = '1.3.0';
+        $this->version = '1.3.1';
         $this->author = 'Michael Dekker & Hachem LATRACH';
 
         parent::__construct();
@@ -81,6 +81,11 @@ class PhpRedisCache extends Module
         $new_settings = preg_replace(
             '/define\(\'_PS_CACHE_ENABLED_\', \'([01]?)\'\);/Ui',
             'define(\'_PS_CACHE_ENABLED_\', \'0\');',
+            $new_settings
+        );
+        $new_settings = preg_replace(
+            '/define\(\'_PS_CACHING_SYSTEM_\', \'(.*?)\'\);/Ui',
+            'define(\'_PS_CACHING_SYSTEM_\', \'CacheFs\');',
             $new_settings
         );
         // If there is not settings file modification or if the backup and replacement of the settings file worked
