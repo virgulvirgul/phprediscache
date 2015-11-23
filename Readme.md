@@ -1,6 +1,6 @@
 # Php Redis Cache PrestaShop module
 
-## Versions : 1.5.x -> 1.6.1.x
+## Versions : 1.6.1.x
 
 Prestashop provides several caching method as memcached, apc, xcache ... 
 
