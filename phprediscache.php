@@ -1,6 +1,6 @@
 <?php
 /**
- * 2015 Michael Dekker
+ * 2015-2016 Michael Dekker
  *
  * NOTICE OF LICENSE
  *
@@ -13,7 +13,7 @@
  * to license@michaeldekker.com so we can send you a copy immediately.
  *
  * @author    Michael Dekker <prestashop@michaeldekker.com>
- * @copyright 2015 Michael Dekker
+ * @copyright 2015-2016 Michael Dekker
  * @license   http://opensource.org/licenses/osl-3.0.php Open Software License (OSL 3.0)
  */
 
@@ -23,7 +23,7 @@ class PhpRedisCache extends Module
     {
         $this->name = 'phprediscache';
         $this->tab = 'administration';
-        $this->version = '1.3.1';
+        $this->version = '1.4.0';
         $this->author = 'Michael Dekker & Hachem LATRACH';
 
         parent::__construct();
@@ -48,15 +48,28 @@ class PhpRedisCache extends Module
     public function install()
     {
         if (!extension_loaded('redis')) {
+            Context::getContext()->controller->errors[] = Tools::displayError(
+                $this->l('The PHP Redis extension is not available on this server.')
+            );
             return false;
         }
-        if (!parent::install() ||
-            !$this->_createContent() ||
+        if (!function_exists('preg_match')) {
+            Context::getContext()->controller->errors[] = Tools::displayError(
+                $this->l('Support for regular expressions (PCRE) is missing on this server.')
+            );
+            return false;
+        }
+        if (!parent::install()) {
+            return false;
+        }
+        // Module is installed from now on
+        if(!$this->_createContent() ||
             !$this->_copyClass()
         ) {
+            $this->uninstall();
             return false;
         }
-        if (_PS_VERSION_ >= '1.6') {
+        if (version_compare(_PS_VERSION_, '1.6.0.0', '>=')) {
             Tools::clearSmartyCache();
             Tools::clearXMLCache();
             Media::clearCache();
@@ -111,6 +124,13 @@ class PhpRedisCache extends Module
         if (class_exists('Redis') && class_exists('CachePhpRedis')) {
             $redis = new Redis();
             $servers = CachePhpRedis::getRedisServer();
+        }
+
+        $errors = $this->detectBOSettings();
+        if (!empty($errors)) {
+            foreach ($errors as $error) {
+                $message .= $this->displayError($error);
+            }
         }
 
         if (Tools::isSubmit('flushdb') && Tools::getValue('flushdb') == '1') {
@@ -224,7 +244,7 @@ class PhpRedisCache extends Module
                     'class' => (version_compare(_PS_VERSION_, '1.6', '>=')) ? null : 't',
                     'is_bool' => true,
                     'label' => $this->l('I would like to flush the current database: ').$servers['PREDIS_DB'],
-                    'name' => 'flushdb',
+                    'name' => 'FLUSHDB',
                     'values' => array(
                         array(
                             'id' => 'flushdb_on',
@@ -279,21 +299,73 @@ class PhpRedisCache extends Module
         $helper->fields_value['PREDIS_PORT'] = Configuration::get('PREDIS_PORT');
         $helper->fields_value['PREDIS_AUTH'] = Configuration::get('PREDIS_AUTH');
         $helper->fields_value['PREDIS_DB'] = Configuration::get('PREDIS_DB');
+        $helper->fields_value['FLUSHDB'] = false;
 
         return $message.$helper->generateForm($fields_form);
     }
 
     protected function _copyClass()
     {
-        return copy(
+        $context = Context::getContext();
+        $controller = $context->controller;
+        if (!file_exists(_PS_OVERRIDE_DIR_.'classes')) {
+            if (!@mkdir(_PS_OVERRIDE_DIR_.'classes')) {
+                $controller->errors[] = Tools::displayError(
+                    sprintf(
+                        $this->l('Could not create the directory %s. Please check permissions for the directory %s'),
+                        _PS_OVERRIDE_DIR_.'classes',
+                        _PS_OVERRIDE_DIR_
+                    )
+                );
+                return false;
+            }
+        }
+        if (!file_exists(_PS_OVERRIDE_DIR_.'classes/cache')) {
+            if (!@mkdir(_PS_OVERRIDE_DIR_.'classes/cache')) {
+                $controller->errors[] = Tools::displayError(
+                    sprintf(
+                        $this->l('Could not create the directory %s. Please check permissions for the directory %s'),
+                        _PS_OVERRIDE_DIR_.'classes/cache',
+                        _PS_OVERRIDE_DIR_.'classes'
+                    )
+                );
+                return false;
+            }
+        }
+        @copy(
             dirname(__FILE__).'/manualoverride/classes/cache/CachePhpRedis.php',
-            _PS_ROOT_DIR_.'/override/classes/cache/CachePhpRedis.php'
+            _PS_OVERRIDE_DIR_.'classes/cache/CachePhpRedis.php'
         );
+        $success = (bool)file_exists(_PS_OVERRIDE_DIR_.'classes/cache/CachePhpRedis.php');
+        if (!$success) {
+            $context->controller->errors[] = Tools::displayError(
+                sprintf(
+                    $this->l('Could not copy the file %s to %s. Please check the file permissions.'),
+                    dirname(__FILE__).'/manualoverride/classes/cache/CachePhpRedis.php',
+                    _PS_OVERRIDE_DIR_.'classes/cache/CachePhpRedis.php'
+                )
+            );
+            return false;
+        }
+
+        return true;
     }
 
     protected function _removeClass()
     {
-        return unlink(_PS_ROOT_DIR_.'/override/classes/cache/CachePhpRedis.php');
+        @unlink(_PS_OVERRIDE_DIR_.'classes/cache/CachePhpRedis.php');
+        $success = !file_exists(_PS_OVERRIDE_DIR_.'classes/cache/CachePhpRedis.php');
+        if (!$success) {
+            Context::getContext()->controller->errors[] = Tools::displayError(
+                sprintf(
+                    $this->l('Could not remove the file %s. Please check the file permissions.'),
+                    _PS_OVERRIDE_DIR_.'classes/cache/CachePhpRedis.php'
+                )
+            );
+            return false;
+        }
+
+        return true;
     }
 
     protected function _saveContent()
@@ -365,5 +437,86 @@ class PhpRedisCache extends Module
         return (preg_match("/^([a-z\d](-*[a-z\d])*)(\.([a-z\d](-*[a-z\d])*))*$/i", $domain_name) //valid chars check
             && preg_match("/^.{1,253}$/", $domain_name) //overall length check
             && preg_match("/^[^\.]{1,63}(\.[^\.]{1,63})*$/", $domain_name)   ); //length of each label
+    }
+
+    /**
+     * Detect Back Office settings
+     *
+     * @return array Array with error message strings
+     */
+    protected function detectBOSettings()
+    {
+        $id_lang = (int)Context::getContext()->language->id;
+        $output = array();
+        if (Configuration::get('PS_DISABLE_OVERRIDES')) {
+            $output[] = $this->l('Overrides are disabled. This module doesn\'t work without overrides. Go to').' "'.
+                $this->getTabName('AdminParentTools', $id_lang).
+                ' > '.
+                $this->getTabName('AdminPerformance', $id_lang).
+                '" '.$this->l('and make sure that the option').' "'.
+                Translate::getAdminTranslation('Disable all overrides', 'AdminPerformance').
+                '" '.$this->l('is set to').' "'.
+                Translate::getAdminTranslation('No', 'AdminPerformance').
+                '"'.$this->l('.').'<br />';
+        }
+        if (Configuration::get('PS_DISABLE_NON_NATIVE_MODULE')) {
+            $output[] = $this->l('Non native modules such as this one are disabled. Go to').' "'.
+                $this->getTabName('AdminParentTools', $id_lang).
+                ' > '.
+                $this->getTabName('AdminPerformance', $id_lang).
+                '" '.$this->l('and make sure that the option').' "'.
+                Translate::getAdminTranslation('Disable non PrestaShop modules', 'AdminPerformance').
+                '" '.$this->l('is set to').' "'.
+                Translate::getAdminTranslation('No', 'AdminPerformance').
+                '"'.$this->l('.').'<br />';
+        }
+        if (!_PS_CACHE_ENABLED_) {
+            $output[] = $this->l('Caching has not been enabled. Go to').' "'.
+                $this->getTabName('AdminParentPreferences', $id_lang).
+                ' > '.
+                $this->getTabName('AdminPerformance', $id_lang).
+                '" '.$this->l('and make sure that the option').' "'.
+                Translate::getAdminTranslation('Use cache', 'AdminPerformance').
+                '" '.$this->l('is set to').' "'.
+                Translate::getAdminTranslation('Yes', 'AdminPerformance').
+                '"'.$this->l('.').'<br />';
+        }
+        if (_PS_CACHING_SYSTEM_ !== 'CachePhpRedis') {
+            $output[] = $this->l('Caching has not been set to CachePhpRedis. Go to').' "'.
+                $this->getTabName('AdminParentPreferences', $id_lang).
+                ' > '.
+                $this->getTabName('AdminPerformance', $id_lang).
+                '" '.$this->l('and make sure that the option').' "'.
+                Translate::getAdminTranslation('Caching system', 'AdminPerformance').
+                '" '.$this->l('is set to').' "CachePhpRedis"'.$this->l('.').'<br />';
+        }
+
+        return $output;
+    }
+
+    /**
+     * Get Tab name from database
+     * @param $class string Class name of tab
+     * @param $id_lang int Language id
+     * @return string Returns the localized tab name
+     */
+    protected function getTabName($class, $id_lang)
+    {
+        if (empty($class) || empty($id_lang)) {
+            return 'Unknown';
+        }
+
+        $sql = new DbQuery();
+        $sql->select('tl.`name`');
+        $sql->from('tab_lang', 'tl');
+        $sql->innerJoin('tab', 't', 't.`id_tab` = tl.`id_tab`');
+        $sql->where('t.`class_name` = \''.pSQL($class).'\'');
+        $sql->where('tl.`id_lang` = '.(int)$id_lang);
+
+        try {
+            return (string)Db::getInstance(_PS_USE_SQL_SLAVE_)->getValue($sql);
+        } catch (Exception $e) {
+            return $this->l('Unknown');
+        }
     }
 }

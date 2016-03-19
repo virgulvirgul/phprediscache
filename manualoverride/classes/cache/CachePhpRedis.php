@@ -1,6 +1,6 @@
 <?php
 /**
- * 2015 Michael Dekker
+ * 2015-2016 Michael Dekker
  *
  * NOTICE OF LICENSE
  *
@@ -13,7 +13,7 @@
  * to license@michaeldekker.com so we can send you a copy immediately.
  *
  * @author    Michael Dekker <prestashop@michaeldekker.com>
- * @copyright 2015 Michael Dekker
+ * @copyright 2015-2016 Michael Dekker
  * @license   http://opensource.org/licenses/osl-3.0.php Open Software License (OSL 3.0)
  */
 
@@ -83,6 +83,8 @@ class CachePhpRedis extends Cache
 
     /**
      * @see Cache::_set()
+     *
+     * @return bool
      */
     protected function _set($key, $value, $ttl = 0)
     {
@@ -96,6 +98,8 @@ class CachePhpRedis extends Cache
 
     /**
      * @see Cache::_get()
+     *
+     * @return bool
      */
     protected function _get($key)
     {
@@ -108,6 +112,8 @@ class CachePhpRedis extends Cache
 
     /**
      * @see Cache::_exists()
+     *
+     * @return bool
      */
     protected function _exists($key)
     {
@@ -120,6 +126,8 @@ class CachePhpRedis extends Cache
 
     /**
      * @see Cache::_delete()
+     *
+     * @return bool
      */
     protected function _delete($key)
     {
@@ -132,6 +140,8 @@ class CachePhpRedis extends Cache
 
     /**
      * @see Cache::_writeKeys()
+     *
+     * @return bool
      */
     protected function _writeKeys()
     {
@@ -139,10 +149,14 @@ class CachePhpRedis extends Cache
             return false;
         }
         $this->redis->set(_COOKIE_IV_, $this->keys);
+
+        return true;
     }
 
     /**
      * @see Cache::flush()
+     *
+     * @return bool
      */
     public function flush()
     {
@@ -150,7 +164,7 @@ class CachePhpRedis extends Cache
             return false;
         }
 
-        return $this->redis->flushDB();
+        return (bool)$this->redis->flushDB();
     }
 
     /**
@@ -165,7 +179,7 @@ class CachePhpRedis extends Cache
         }
 
         // Don't close the connection, needs to be persistent across PHP-sessions
-        return;
+        return true;
     }
 
     /**
@@ -177,11 +191,11 @@ class CachePhpRedis extends Cache
     {
         $server = array();
         // bypass the memory fatal error caused functions nesting on PS 1.5
-        $params = Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS(
-            'SELECT * FROM '._DB_PREFIX_.'configuration WHERE name = "PREDIS_SERVER" OR name="PREDIS_PORT" OR name="PREDIS_AUTH" OR name="PREDIS_DB"',
-            true,
-            false
-        );
+        $sql = new DbQuery();
+        $sql->select('`name`, `value`');
+        $sql->from('configuration');
+        $sql->where('`name` = \'PREDIS_SERVER\' OR `name` = \'PREDIS_PORT\' OR name = \'PREDIS_AUTH\' OR name = \'PREDIS_DB\'');
+        $params = Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS($sql, true, false);
         foreach ($params as $key => $val) {
             $server[$val['name']] = $val['value'];
         }

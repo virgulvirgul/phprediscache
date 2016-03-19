@@ -1,6 +1,6 @@
 <?php
 /**
- * 2015 Michael Dekker
+ * 2015-2016 Michael Dekker
  *
  * NOTICE OF LICENSE
  *
@@ -13,7 +13,7 @@
  * to license@michaeldekker.com so we can send you a copy immediately.
  *
  * @author    Michael Dekker <prestashop@michaeldekker.com>
- * @copyright 2015 Michael Dekker
+ * @copyright 2015-2016 Michael Dekker
  * @license   http://opensource.org/licenses/osl-3.0.php Open Software License (OSL 3.0)
  */
 
